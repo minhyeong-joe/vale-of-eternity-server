@@ -14,6 +14,14 @@ const userSchema = new mongoose.Schema({
         match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email address"],
     },
     password: { type: String, required: true },
+    createdAt: {
+        type: Date,
+        default: Date.now,
+    },
+    lastSignIn: {
+        type: Date,
+        default: null,
+    },
 });
 
 const User = mongoose.model("User", userSchema);

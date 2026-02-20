@@ -13,8 +13,20 @@ export async function signUp(req, res) {
                 message: 'Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number',
             });
         }
-        const hashedPassword = await bcrypt.hash(password, HASH_SALT);
 
+        // Check if email already exists
+        const existingEmail = await User.findOne({ email });
+        if (existingEmail) {
+            return res.status(400).json({ message: 'Email already in use' });
+        }
+
+        // Check if username already exists
+        const existingUsername = await User.findOne({ username });
+        if (existingUsername) {
+            return res.status(400).json({ message: 'Username already in use' });
+        }
+
+        const hashedPassword = await bcrypt.hash(password, HASH_SALT);
         const newUser = new User({ username, email, password: hashedPassword });
         await newUser.save();
 
@@ -25,11 +37,6 @@ export async function signUp(req, res) {
             const messages = Object.values(error.errors).map((e) => e.message);
             return res.status(400).json({ message: messages.join(', ') });
         }
-        // MongoDB duplicate key error (unique index on username or email)
-        if (error.code === 11000) {
-            const field = Object.keys(error.keyValue)[0];
-            return res.status(400).json({ message: `${field.charAt(0).toUpperCase() + field.slice(1)} already in use` });
-        }
         res.status(500).json({ message: 'Server error' });
     }
 }
@@ -39,13 +46,18 @@ export async function signIn(req, res) {
     try {
         const user = await User.findOne({ username });
         if (!user) {
-            return res.status(400).json({ message: 'Invalid username or password' });
+            return res.status(400).json({ message: 'Incorrect username or password' });
         }
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(400).json({ message: 'Invalid username or password' });
+            return res.status(400).json({ message: 'Incorrect username or password' });
         }
-        res.status(200).json({ message: 'Sign in successful test', data: { username: user.username, email: user.email, client_token: 'dummy-token'} });
+        
+        // Update lastSignIn timestamp
+        user.lastSignIn = new Date();
+        await user.save();
+        
+        res.status(200).json({ message: 'Sign in successful', data: { username: user.username, email: user.email, client_token: 'dummy-token'} });
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }
