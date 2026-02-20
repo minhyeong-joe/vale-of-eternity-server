@@ -1,0 +1,27 @@
+{
+  "name": "vale-of-eternity-server",
+  "version": "1.0.0",
+  "description": "Socket server to manage Vale of Eternity Boardgame Web App",
+  "keywords": [
+    "vale of eternity",
+    "socket.io",
+    "express",
+    "multiplayer",
+    "real-time",
+    "boardgame"
+  ],
+  "license": "ISC",
+  "author": "Minhyeong Joe",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}
