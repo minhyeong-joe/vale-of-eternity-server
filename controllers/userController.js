@@ -57,7 +57,7 @@ export async function signIn(req, res) {
         user.lastSignIn = new Date();
         await user.save();
         
-        res.status(200).json({ message: 'Sign in successful', data: { username: user.username, email: user.email, client_token: 'dummy-token'} });
+        res.status(200).json({ message: 'Sign in successful', data: { userId: user._id, username: user.username, email: user.email, client_token: 'dummy-token'} });
     } catch (error) {
         res.status(500).json({ message: 'Server error' });
     }
