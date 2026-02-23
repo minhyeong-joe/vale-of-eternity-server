@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { randomUUID } from "crypto";
 
 /**
  * Internal room shape:
@@ -11,7 +11,7 @@ import { randomUUID } from 'crypto';
  *   password:     string | null,
  *   maxPlayers:   number,
  *   status:       'waiting' | 'in-progress' | 'finished',
- *   players:      Array<{ socketId: string, userId: string, username: string }>,
+ *   players:      Array<{ socketId: string, userId: string, username: string, isConnected: boolean }>,
  * }
  */
 
@@ -24,33 +24,38 @@ const rooms = new Map();
  * @param {string} username
  * @param {{ name: string, pace?: string, isPrivate?: boolean, password?: string, maxPlayers?: number }} options
  */
-export function createRoom(hostSocketId, userId, username, { name, pace, isPrivate, password, maxPlayers }) {
-  const id = randomUUID();
-  const room = {
-    id,
-    name,
-    hostSocketId,
-    hostUserId: userId,
-    hostUsername: username,
-    pace: pace ?? 'chill',
-    isPrivate: isPrivate ?? false,
-    password: password ?? null,
-    maxPlayers: Math.min(Math.max(Number(maxPlayers) || 4, 2), 4),
-    status: 'waiting',
-    players: [{ socketId: hostSocketId, userId, username }],
-  };
-  rooms.set(id, room);
-  return room;
+export function createRoom(
+	hostSocketId,
+	userId,
+	username,
+	{ name, pace, isPrivate, password, maxPlayers },
+) {
+	const id = randomUUID();
+	const room = {
+		id,
+		name,
+		hostSocketId,
+		hostUserId: userId,
+		hostUsername: username,
+		pace: pace ?? "chill",
+		isPrivate: isPrivate ?? false,
+		password: password ?? null,
+		maxPlayers: Math.min(Math.max(Number(maxPlayers) || 4, 2), 4),
+		status: "waiting",
+		players: [{ socketId: hostSocketId, userId, username, isConnected: true }],
+	};
+	rooms.set(id, room);
+	return room;
 }
 
 /** @param {string} roomId */
 export function getRoom(roomId) {
-  return rooms.get(roomId);
+	return rooms.get(roomId);
 }
 
 /** @returns {object[]} */
 export function getAllRooms() {
-  return [...rooms.values()];
+	return [...rooms.values()];
 }
 
 /**
@@ -61,14 +66,14 @@ export function getAllRooms() {
  * @returns {{ room: object } | null}
  */
 export function addPlayer(roomId, socketId, userId, username) {
-  const room = rooms.get(roomId);
-  if (!room) return null;
-  if (room.players.length >= room.maxPlayers) return null;
-  if (room.status !== 'waiting') return null;
-  if (room.players.some(p => p.userId === userId)) return null;
+	const room = rooms.get(roomId);
+	if (!room) return null;
+	if (room.players.length >= room.maxPlayers) return null;
+	if (room.status !== "waiting") return null;
+	if (room.players.some((p) => p.userId === userId)) return null;
 
-  room.players.push({ socketId, userId, username });
-  return { room };
+	room.players.push({ socketId, userId, username, isConnected: true });
+	return { room };
 }
 
 /**
@@ -79,24 +84,24 @@ export function addPlayer(roomId, socketId, userId, username) {
  * @returns {{ room: object, deleted: boolean }}
  */
 export function removePlayer(roomId, socketId) {
-  const room = rooms.get(roomId);
-  if (!room) return { room: null, deleted: false };
+	const room = rooms.get(roomId);
+	if (!room) return { room: null, deleted: false };
 
-  room.players = room.players.filter(p => p.socketId !== socketId);
+	room.players = room.players.filter((p) => p.socketId !== socketId);
 
-  if (room.players.length === 0) {
-    rooms.delete(roomId);
-    return { room, deleted: true };
-  }
+	if (room.players.length === 0) {
+		rooms.delete(roomId);
+		return { room, deleted: true };
+	}
 
-  // Promote first remaining player to host if host left
-  if (room.hostSocketId === socketId) {
-    room.hostSocketId = room.players[0].socketId;
-    room.hostUserId = room.players[0].userId;
-    room.hostUsername = room.players[0].username;
-  }
+	// Promote first remaining player to host if host left
+	if (room.hostSocketId === socketId) {
+		room.hostSocketId = room.players[0].socketId;
+		room.hostUserId = room.players[0].userId;
+		room.hostUsername = room.players[0].username;
+	}
 
-  return { room, deleted: false };
+	return { room, deleted: false };
 }
 
 /**
@@ -106,25 +111,28 @@ export function removePlayer(roomId, socketId) {
  * @param {{ name?: string, pace?: string, isPrivate?: boolean, maxPlayers?: number, password?: string|null }} updates
  * @returns {object|null}
  */
-export function updateRoom(roomId, { name, pace, isPrivate, maxPlayers, password }) {
-  const room = rooms.get(roomId);
-  if (!room) return null;
+export function updateRoom(
+	roomId,
+	{ name, pace, isPrivate, maxPlayers, password },
+) {
+	const room = rooms.get(roomId);
+	if (!room) return null;
 
-  if (name      !== undefined) room.name      = name;
-  if (pace      !== undefined) room.pace      = pace;
-  if (isPrivate !== undefined) room.isPrivate = isPrivate;
-  if (maxPlayers !== undefined) room.maxPlayers = maxPlayers;
-  if (password  !== undefined) room.password  = password ?? null;
+	if (name !== undefined) room.name = name;
+	if (pace !== undefined) room.pace = pace;
+	if (isPrivate !== undefined) room.isPrivate = isPrivate;
+	if (maxPlayers !== undefined) room.maxPlayers = maxPlayers;
+	if (password !== undefined) room.password = password ?? null;
 
-  return room;
+	return room;
 }
 
 /** @param {string} socketId */
 export function getRoomBySocketId(socketId) {
-  for (const room of rooms.values()) {
-    if (room.players.some(p => p.socketId === socketId)) return room;
-  }
-  return null;
+	for (const room of rooms.values()) {
+		if (room.players.some((p) => p.socketId === socketId)) return room;
+	}
+	return null;
 }
 
 /**
@@ -133,17 +141,17 @@ export function getRoomBySocketId(socketId) {
  * @returns {object}
  */
 export function toRoomInfo(room) {
-  return {
-    id:             room.id,
-    name:           room.name,
-    hostUserId:     room.hostUserId,
-    hostUsername:   room.hostUsername,
-    pace:           room.pace,
-    isPrivate:      room.isPrivate,
-    maxPlayers:     room.maxPlayers,
-    currentPlayers: room.players.length,
-    status:         room.status,
-  };
+	return {
+		id: room.id,
+		name: room.name,
+		hostUserId: room.hostUserId,
+		hostUsername: room.hostUsername,
+		pace: room.pace,
+		isPrivate: room.isPrivate,
+		maxPlayers: room.maxPlayers,
+		currentPlayers: room.players.length,
+		status: room.status,
+	};
 }
 
 /**
@@ -152,8 +160,61 @@ export function toRoomInfo(room) {
  * @returns {object}
  */
 export function toRoomDetail(room) {
-  return {
-    ...toRoomInfo(room),
-    players: room.players.map(({ userId, username }) => ({ userId, username })),
-  };
+	return {
+		...toRoomInfo(room),
+		players: room.players.map(({ userId, username, isConnected }) => ({
+			userId,
+			username,
+			isConnected,
+		})),
+	};
+}
+
+/**
+ * Finds a room by userId (used during reconnect — socketId has changed).
+ * @param {string} userId
+ * @returns {object | null}
+ */
+export function getRoomByUserId(userId) {
+	for (const room of rooms.values()) {
+		if (room.players.some((p) => p.userId === userId)) return room;
+	}
+	return null;
+}
+
+/**
+ * Replaces a player's socketId and marks them as connected.
+ * Called when a player reconnects within the grace period.
+ * Also updates hostSocketId if the reconnecting player is the host.
+ * @param {string} roomId
+ * @param {string} userId
+ * @param {string} newSocketId
+ * @returns {boolean} true if the player was found and updated
+ */
+export function updatePlayerSocketId(roomId, userId, newSocketId) {
+	const room = rooms.get(roomId);
+	if (!room) return false;
+	const player = room.players.find((p) => p.userId === userId);
+	if (!player) return false;
+	player.socketId = newSocketId;
+	player.isConnected = true;
+	if (room.hostUserId === userId) room.hostSocketId = newSocketId;
+	return true;
+}
+
+/**
+ * Sets the isConnected flag for a player in a room.
+ * Called on disconnect (false) before starting the grace-period timer.
+ * @param {string} roomId
+ * @param {string} userId
+ * @param {boolean} isConnected
+ * @returns {boolean} true if the player was found
+ */
+export function setPlayerConnected(roomId, userId, isConnected) {
+	const room = rooms.get(roomId);
+	if (!room) return false;
+	const player = room.players.find((p) => p.userId === userId);
+	if (!player) return false;
+	player.isConnected = isConnected;
+	return true;
 }

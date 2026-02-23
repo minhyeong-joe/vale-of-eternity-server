@@ -1,46 +1,133 @@
-import { handleRoomCreate, handleRoomJoin, handleRoomLeave, handleRoomUpdate } from './handlers/room.js';
-import { handleLobbyRooms } from './handlers/lobby.js';
-import { getRoomBySocketId, removePlayer, toRoomInfo } from './store/rooms.js';
-import { LobbyEvents, RoomEvents } from './contracts.js';
+import jwt from "jsonwebtoken";
+
+import {
+	handleRoomCreate,
+	handleRoomJoin,
+	handleRoomLeave,
+	handleRoomUpdate,
+} from "./handlers/room.js";
+import { handleLobbyRooms } from "./handlers/lobby.js";
+import {
+	getRoomBySocketId,
+	getRoomByUserId,
+	updatePlayerSocketId,
+	setPlayerConnected,
+	removePlayer,
+	toRoomInfo,
+	toRoomDetail,
+} from "./store/rooms.js";
+import { scheduleDisconnect, cancelDisconnect } from "./store/sessions.js";
+import { LobbyEvents, RoomEvents } from "./contracts.js";
 
 export function registerSocketHandlers(io) {
-  // Middleware: require userId + username on every connection
-  io.use((socket, next) => {
-    const { userId, username } = socket.handshake.auth;
-    if (!userId?.trim() || !username?.trim()) {
-      return next(new Error('UNAUTHORIZED'));
-    }
-    socket.data.userId = userId.trim();
-    socket.data.username = username.trim();
-    next();
-  });
+	// check token for username and userId
+	io.use((socket, next) => {
+		const { token } = socket.handshake.auth;
+		if (!token?.trim()) {
+			return next(new Error("UNAUTHORIZED"));
+		}
+		try {
+			const { userId, username } = jwt.verify(token, process.env.JWT_SECRET);
+			if (!userId?.trim() || !username?.trim()) {
+				return next(new Error("UNAUTHORIZED"));
+			}
+			socket.data.userId = userId.trim();
+			socket.data.username = username.trim();
+			next();
+		} catch {
+			return next(new Error("UNAUTHORIZED"));
+		}
+	});
 
-  io.on('connection', (socket) => {
-    console.log(`[socket] connected: ${socket.id} userId: ${socket.data.userId} username: ${socket.data.username}`);
+	io.on("connection", (socket) => {
+		const { userId, username } = socket.data;
+		console.log(
+			`[socket] connected: ${socket.id} userId: ${userId} username: ${username}`,
+		);
+		const pending = cancelDisconnect(userId);
 
-    // All sockets start in the lobby channel until they join a game room
-    socket.join('lobby');
+		if (pending) {
+			const restored = updatePlayerSocketId(pending.roomId, userId, socket.id);
 
-    socket.on(LobbyEvents.GET_ROOMS, () => handleLobbyRooms(io, socket));
-    socket.on(RoomEvents.CREATE, (payload) => handleRoomCreate(io, socket, payload));
-    socket.on(RoomEvents.JOIN, (payload) => handleRoomJoin(io, socket, payload));
-    socket.on(RoomEvents.LEAVE, (payload) => handleRoomLeave(io, socket, payload));
-    socket.on(RoomEvents.UPDATE, (payload) => handleRoomUpdate(io, socket, payload));
+			if (restored) {
+				socket.join(pending.roomId);
+				const room = getRoomByUserId(userId);
+				if (room) {
+					const roomDetail = toRoomDetail(room);
+					io.to(pending.roomId).emit(RoomEvents.JOINED, { roomDetail });
+					socket.emit(RoomEvents.RESTORED, { roomDetail });
+				}
+				console.log(
+					`[socket] Reconnected within grace period: userId: ${userId} → room: ${pending.roomId}`,
+				);
+			} else {
+				// Room no longer exists or player is kicked out
+				socket.join("lobby");
+			}
+		} else {
+			socket.join("lobby");
+		}
 
-    socket.on('disconnect', (reason) => {
-      console.log(`[socket] disconnected: ${socket.id} userId: ${socket.data.userId} username: ${socket.data.username} — reason: ${reason}`);
+		socket.on(LobbyEvents.GET_ROOMS, () => handleLobbyRooms(io, socket));
+		socket.on(RoomEvents.CREATE, (payload) =>
+			handleRoomCreate(io, socket, payload),
+		);
+		socket.on(RoomEvents.JOIN, (payload) =>
+			handleRoomJoin(io, socket, payload),
+		);
+		socket.on(RoomEvents.LEAVE, (payload) =>
+			handleRoomLeave(io, socket, payload),
+		);
+		socket.on(RoomEvents.UPDATE, (payload) =>
+			handleRoomUpdate(io, socket, payload),
+		);
 
-      // Clean up any room the socket was in
-      const room = getRoomBySocketId(socket.id);
-      if (room) {
-        const { room: updatedRoom, deleted } = removePlayer(room.id, socket.id);
-        if (deleted) {
-          io.to('lobby').emit(LobbyEvents.ROOM_REMOVED, room.id);
-          console.log(`[room] Room ${room.id} removed (host disconnected)`);
-        } else if (updatedRoom) {
-          io.to('lobby').emit(LobbyEvents.ROOM_UPDATED, toRoomInfo(updatedRoom));
-        }
-      }
-    });
-  });
+		socket.on("disconnect", (reason) => {
+			console.log(
+				`[socket] disconnected: ${socket.id} userId: ${userId} username: ${username} — reason: ${reason}`,
+			);
+
+			const room = getRoomBySocketId(socket.id);
+
+			// Player was only in the lobby — no grace period needed
+			if (!room) return;
+
+			const roomId = room.id;
+			const socketId = socket.id; // captured for the timer closure
+
+			// Mark the player as temporarily disconnected in the store
+			setPlayerConnected(roomId, userId, false);
+
+			// Tell the remaining room members so they can show a UI indicator
+			io.to(roomId).emit(RoomEvents.PLAYER_RECONNECTING, { userId, username });
+
+			console.log(
+				`[socket] Grace period started for userId: ${userId} in room: ${roomId}`,
+			);
+
+			scheduleDisconnect(userId, roomId, () => {
+				// Grace period elapsed with no reconnect — treat as a normal leave
+				console.log(
+					`[socket] Grace period expired for userId: ${userId}, removing from room: ${roomId}`,
+				);
+
+				const { room: updatedRoom, deleted } = removePlayer(roomId, socketId);
+
+				if (deleted) {
+					io.to("lobby").emit(LobbyEvents.ROOM_REMOVED, roomId);
+					console.log(`[room] Room ${roomId} removed — last player timed out`);
+				} else if (updatedRoom) {
+					// Mirror the voluntary-leave broadcast so clients handle it identically
+					io.to(roomId).emit(RoomEvents.LEFT, {
+						roomId,
+						roomDetail: toRoomDetail(updatedRoom),
+					});
+					io.to("lobby").emit(
+						LobbyEvents.ROOM_UPDATED,
+						toRoomInfo(updatedRoom),
+					);
+				}
+			});
+		});
+	});
 }

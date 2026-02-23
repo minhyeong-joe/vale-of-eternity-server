@@ -34,6 +34,10 @@ export const RoomEvents = Object.freeze({
   UPDATED: 'room:updated',
   /** server -> client | payload: RoomErrorPayload   | Sent to the requesting socket only on error */
   ERROR:   'room:error',
+  /** server -> client | payload: { userId, username } | Player lost connection; 60s grace period started */
+  PLAYER_RECONNECTING: 'room:player-reconnecting',
+  /** server -> client (reconnecting socket only) | payload: RoomRestoredPayload | Grace-period reconnect succeeded; client should navigate back to room */
+  RESTORED: 'room:restored',
 });
 
 // ─── JSDoc type definitions (mirrors client-side TypeScript interfaces) ────
