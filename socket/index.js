@@ -17,7 +17,19 @@ import {
 	toRoomDetail,
 } from "./store/rooms.js";
 import { scheduleDisconnect, cancelDisconnect } from "./store/sessions.js";
-import { LobbyEvents, RoomEvents } from "./contracts.js";
+import { LobbyEvents, RoomEvents, GameEvents } from "./contracts.js";
+import {
+	handleGameStart,
+	handleHuntPick,
+	handleSell,
+	handleTame,
+	handleSummon,
+	handleRemove,
+	handleActivate,
+	handleRespond,
+	handleEndTurn,
+} from "./handlers/game.js";
+import { getGame, deleteGame, toClientState } from "./store/game.js";
 
 export function registerSocketHandlers(io) {
 	// check token for username and userId
@@ -38,7 +50,6 @@ export function registerSocketHandlers(io) {
 			return next(new Error("UNAUTHORIZED"));
 		}
 	});
-
 	io.on("connection", (socket) => {
 		const { userId, username } = socket.data;
 		console.log(
@@ -56,6 +67,11 @@ export function registerSocketHandlers(io) {
 					const roomDetail = toRoomDetail(room);
 					io.to(pending.roomId).emit(RoomEvents.JOINED, { roomDetail });
 					socket.emit(RoomEvents.RESTORED, { roomDetail });
+				}
+				// Re-emit game state if an active game exists in this room
+				const gs = getGame(pending.roomId);
+				if (gs) {
+					socket.emit(GameEvents.STATE, toClientState(gs, userId));
 				}
 				console.log(
 					`[socket] Reconnected within grace period: userId: ${userId} → room: ${pending.roomId}`,
@@ -82,13 +98,44 @@ export function registerSocketHandlers(io) {
 			handleRoomUpdate(io, socket, payload),
 		);
 
+		// Game events
+		socket.on(GameEvents.START, () => handleGameStart(io, socket));
+		socket.on(GameEvents.HUNT_PICK, (payload) =>
+			handleHuntPick(io, socket, payload),
+		);
+		socket.on(GameEvents.SELL, (payload) => handleSell(io, socket, payload));
+		socket.on(GameEvents.TAME, (payload) => handleTame(io, socket, payload));
+		socket.on(GameEvents.SUMMON, (payload) =>
+			handleSummon(io, socket, payload),
+		);
+		socket.on(GameEvents.REMOVE, (payload) =>
+			handleRemove(io, socket, payload),
+		);
+		socket.on(GameEvents.ACTIVATE, (payload) =>
+			handleActivate(io, socket, payload),
+		);
+		socket.on(GameEvents.RESPOND, (payload) =>
+			handleRespond(io, socket, payload),
+		);
+		socket.on(GameEvents.END_TURN, () => handleEndTurn(io, socket));
+
+		// Re-send game state on client request (e.g. page refresh race condition)
+		socket.on(GameEvents.REQUEST_STATE, () => {
+			const room = getRoomByUserId(userId);
+			if (!room) return;
+			const gs = getGame(room.id);
+			if (gs) {
+				socket.emit(GameEvents.STATE, toClientState(gs, userId));
+			}
+			socket.emit(RoomEvents.JOINED, { roomDetail: toRoomDetail(room) });
+		});
+
 		socket.on("disconnect", (reason) => {
 			console.log(
 				`[socket] disconnected: ${socket.id} userId: ${userId} username: ${username} — reason: ${reason}`,
 			);
 
 			const room = getRoomBySocketId(socket.id);
-
 			// Player was only in the lobby — no grace period needed
 			if (!room) return;
 
@@ -114,9 +161,23 @@ export function registerSocketHandlers(io) {
 				const { room: updatedRoom, deleted } = removePlayer(roomId, socketId);
 
 				if (deleted) {
+					deleteGame(roomId); // clean up any in-progress game state
 					io.to("lobby").emit(LobbyEvents.ROOM_REMOVED, roomId);
 					console.log(`[room] Room ${roomId} removed — last player timed out`);
 				} else if (updatedRoom) {
+					// End any in-progress game — player permanently left after grace period
+					const activeGame = getGame(roomId);
+					if (activeGame && activeGame.phase !== "finished") {
+						deleteGame(roomId);
+						updatedRoom.status = "waiting";
+						io.to(roomId).emit(GameEvents.ENDED, {
+							reason: "player_left",
+							username,
+						});
+						console.log(
+							`[game] Game in room ${roomId} ended — ${username} timed out`,
+						);
+					}
 					// Mirror the voluntary-leave broadcast so clients handle it identically
 					io.to(roomId).emit(RoomEvents.LEFT, {
 						roomId,
