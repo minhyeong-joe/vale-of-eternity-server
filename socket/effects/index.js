@@ -59,7 +59,7 @@ export function resolveEffect(gs, userId, cardId, effectIndex, context) {
 	const player = getPlayer(gs, userId);
 	if (!player) return { ok: false, error: "Player not found" };
 
-	return executeSteps(gs, player, cardId, effect.steps, context);
+	return executeSteps(gs, player, cardId, effect.steps, context, effect.type);
 }
 
 // ─── Step executor ────────────────────────────────────────────────────────
@@ -68,15 +68,15 @@ export function resolveEffect(gs, userId, cardId, effectIndex, context) {
  * Execute a sequence of steps.
  * Stops early if a step returns { ok: false } or needs interaction.
  */
-function executeSteps(gs, player, sourceCardId, steps, context) {
+function executeSteps(gs, player, sourceCardId, steps, context, effectType) {
 	for (const step of steps) {
-		const result = executeStep(gs, player, sourceCardId, step, context);
-		if (!result.ok || result.needsInteraction) return result;
+		const result = executeStep(gs, player, sourceCardId, step, context, effectType);
+		if (!result.ok || result.needsInteraction || result.skipped) return result;
 	}
 	return { ok: true };
 }
 
-function executeStep(gs, player, sourceCardId, step, context) {
+function executeStep(gs, player, sourceCardId, step, context, effectType) {
 	switch (step.action) {
 		// ── Score ────────────────────────────────────────────────────────────
 		case "earnScore": {
@@ -155,6 +155,8 @@ function executeStep(gs, player, sourceCardId, step, context) {
 				return { ok: true };
 			}
 			if (!discardStones(player, step.stoneType)) {
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: `No ${step.stoneType} stone to discard` };
 				return { ok: false, error: `No ${step.stoneType} stone to discard` };
 			}
 			return { ok: true };
@@ -165,12 +167,16 @@ function executeStep(gs, player, sourceCardId, step, context) {
 			if (step.to === "blue" && step.count > 1) {
 				// Exchange 1 purple → 3 blue (Snail Maiden)
 				if (!discardStones(player, step.from)) {
+					if (effectType !== "instant")
+						return { ok: true, skipped: true, message: `No ${step.from} stone to exchange` };
 					return { ok: false, error: `No ${step.from} stone` };
 				}
 				earnStones(player, step.to, step.count);
 				return { ok: true };
 			}
 			if (!exchangeStones(player, step.from, step.to, step.count ?? 1)) {
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: `Not enough ${step.from} stones to exchange` };
 				return { ok: false, error: `Not enough ${step.from} stones` };
 			}
 			return { ok: true };
@@ -201,6 +207,8 @@ function executeStep(gs, player, sourceCardId, step, context) {
 			const filter = step.filter ?? {};
 			const matches = player.area.filter((id) => matchesFilter(id, filter));
 			if (matches.length === 0) {
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: "No matching card in area to recover" };
 				return { ok: false, error: "No matching card in area to recover" };
 			}
 			if (matches.length === 1) {
@@ -235,6 +243,8 @@ function executeStep(gs, player, sourceCardId, step, context) {
 			// Aeris (61): recover another card from area, earn score = its written cost
 			const others = player.area.filter((id) => id !== sourceCardId);
 			if (others.length === 0) {
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: "No other card in area to recover" };
 				return { ok: false, error: "No other card in area to recover" };
 			}
 			if (others.length === 1) {
@@ -270,6 +280,8 @@ function executeStep(gs, player, sourceCardId, step, context) {
 		case "discardFromHand": {
 			// Requires player to choose which hand card to discard
 			if (player.hand.length === 0) {
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: "Empty hand — cannot discard" };
 				return { ok: false, error: "Empty hand — cannot discard" };
 			}
 			return requestInteraction(
@@ -332,6 +344,8 @@ function executeStep(gs, player, sourceCardId, step, context) {
 			const filter = step.filter ?? {};
 			const matches = gs.discardPile.filter((id) => matchesFilter(id, filter));
 			if (matches.length === 0) {
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: "No matching card in discard pile" };
 				return { ok: false, error: "No matching card in discard pile" };
 			}
 			if (matches.length === 1) {
@@ -378,10 +392,9 @@ function executeStep(gs, player, sourceCardId, step, context) {
 				return matchesFilter(id, filter);
 			});
 			if (handOptions.length === 0) {
-				return {
-					ok: false,
-					error: "No matching card in hand to summon for free",
-				};
+				if (effectType !== "instant")
+					return { ok: true, skipped: true, message: "No matching card in hand to summon for free" };
+				return { ok: false, error: "No matching card in hand to summon for free" };
 			}
 
 			// First: discard a card from hand (any card if no filter, or filtered card)
@@ -395,6 +408,8 @@ function executeStep(gs, player, sourceCardId, step, context) {
 					(id) => CardData[id]?.family === "dragon",
 				);
 				if (dragons.length === 0) {
+					if (effectType !== "instant")
+						return { ok: true, skipped: true, message: "No dragon card in hand to summon" };
 					return { ok: false, error: "No dragon card in hand to summon" };
 				}
 				return requestInteraction(
@@ -563,7 +578,7 @@ function executeStep(gs, player, sourceCardId, step, context) {
 		case "conditional": {
 			const met = checkCondition(gs, player, step.condition);
 			const branch = met ? (step.then ?? []) : (step.else ?? []);
-			return executeSteps(gs, player, sourceCardId, branch, context);
+			return executeSteps(gs, player, sourceCardId, branch, context, effectType);
 		}
 
 		case "choice": {
@@ -594,6 +609,7 @@ function executeStep(gs, player, sourceCardId, step, context) {
 				sourceCardId,
 				step.options[idx].steps,
 				context,
+				effectType,
 			);
 		}
 
@@ -802,7 +818,7 @@ export function fireOnSummonTriggers(gs, player, summonedCardId, payment) {
 		}
 
 		// Execute trigger steps
-		executeSteps(gs, player, trigger.cardId, trigger.steps, { payment });
+		executeSteps(gs, player, trigger.cardId, trigger.steps, { payment }, "permanent");
 	}
 }
 
@@ -815,7 +831,7 @@ export function fireOnTameTriggers(gs, player, tamedCardId) {
 		const cond = trigger.condition;
 		if (cond?.check === "tamedCardFamily" && tamedCard?.family !== cond.family)
 			continue;
-		executeSteps(gs, player, trigger.cardId, trigger.steps, {});
+		executeSteps(gs, player, trigger.cardId, trigger.steps, {}, "permanent");
 	}
 }
 
@@ -864,30 +880,5 @@ export function getActivatableCards(player) {
  * Determine if a resolvable active effect exists for any unactivated card.
  */
 export function hasResolvableActiveEffect(gs, player) {
-	return getActivatableCards(player).some((cardId) => {
-		const def = CardEffectRepo[cardId];
-		const eIdx = def.effects.findIndex((e) => e.type === "active");
-		if (eIdx === -1) return false;
-		// Quick feasibility: check that mandatory preconditions hold
-		const effect = def.effects[eIdx];
-		for (const step of effect.steps) {
-			if (step.action === "discardStone") {
-				if (
-					step.stoneType !== "all" &&
-					(player.stones[step.stoneType] ?? 0) < 1
-				)
-					return false;
-			}
-			if (step.action === "discardFromHand" && player.hand.length === 0)
-				return false;
-			if (step.action === "fromDiscardToHand") {
-				const filter = step.filter ?? {};
-				const matches = gs.discardPile.filter((id) =>
-					matchesFilter(id, filter),
-				);
-				if (matches.length === 0) return false;
-			}
-		}
-		return true;
-	});
+	return getActivatableCards(player).length > 0;
 }

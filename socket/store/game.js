@@ -256,13 +256,14 @@ export function totalStones(player) {
 /** Total stone value factoring in stoneValueBonus and stoneOverrides */
 export function stoneValue(player, stoneType, count = null) {
 	const types = stoneType ? [stoneType] : ["red", "blue", "purple"];
+	const BASE = { red: 1, blue: 3, purple: 6 };
 	let total = 0;
 	for (const t of types) {
-		const baseValue = { red: 1, blue: 3, purple: 6 }[t] ?? 1;
-		const bonus = player.stoneValueBonus[t] ?? 0;
-		const effectiveValue = baseValue + bonus;
+		const effectiveType = player.stoneOverrides?.find((o) => o.from === t)?.countsAs ?? t;
+		const baseValue = BASE[effectiveType] ?? BASE[t];
+		const bonus = (player.stoneValueBonus[effectiveType] ?? 0);
 		const cnt = count ?? player.stones[t];
-		total += cnt * effectiveValue;
+		total += cnt * (baseValue + bonus);
 	}
 	return total;
 }
@@ -687,11 +688,9 @@ export function toClientState(gs, forUserId) {
 				stoneValueBonus: p.stoneValueBonus
 					? { ...p.stoneValueBonus }
 					: { red: 0, blue: 0, purple: 0 },
-				stoneValueOverrides:
-					p.stoneOverrides && p.stoneOverrides.length > 0
-						? p.stoneOverrides[p.stoneOverrides.length - 1] // If multiple, use last
-						: null,
-				// ...other fields as needed...
+				stoneOverrides: [...(p.stoneOverrides ?? [])],
+				costReductionAll: p.costReductionAll ?? 0,
+				costReductionByFamily: { ...(p.costReductionByFamily ?? {}) },
 			};
 		}),
 	};

@@ -393,30 +393,39 @@ export function handleRespond(io, socket, payload) {
 	if (gs.pendingInteraction.forUserId !== userId)
 		return gameError(socket, "Not your interaction");
 
-	const { cardId, context: pCtx } = gs.pendingInteraction;
-	const { type, value } = payload ?? {};
+	const { type: interactionType, cardId, context: pCtx } = gs.pendingInteraction;
+	const { value } = payload ?? {};
 
-	// Stone overflow: player chooses which stone type to discard
+	// Stone overflow: player sends kept stone counts { red, blue, purple } summing to cap
 	if (gs.pendingInteraction.type === "stoneOverflow") {
-		if (!["red", "blue", "purple"].includes(value)) {
-			return gameError(socket, "Invalid stone type to discard");
-		}
+		const cap = gs.pendingInteraction.context.cap;
 		const player = getPlayer(gs, userId);
-		if (!player || (player.stones[value] ?? 0) < 1) {
-			return gameError(socket, `No ${value} stone to discard`);
+		if (!player) return gameError(socket, "Player not found");
+		if (
+			typeof value !== "object" || value === null ||
+			typeof value.red !== "number" ||
+			typeof value.blue !== "number" ||
+			typeof value.purple !== "number"
+		) {
+			return gameError(socket, "Invalid stone overflow payload");
 		}
-		player.stones[value]--;
+		const { red, blue, purple } = value;
+		if (red < 0 || blue < 0 || purple < 0)
+			return gameError(socket, "Stone counts cannot be negative");
+		if (red > player.stones.red || blue > player.stones.blue || purple > player.stones.purple)
+			return gameError(socket, "Cannot keep more stones than you have");
+		if (red + blue + purple !== cap)
+			return gameError(socket, `Kept total must equal cap (${cap})`);
+		player.stones.red = red;
+		player.stones.blue = blue;
+		player.stones.purple = purple;
 		gs.pendingInteraction = null;
-		checkStoneOverflow(gs, userId);
 		broadcastDelta(io, gs);
-		if (gs.pendingInteraction) {
-			io.to(player.socketId).emit(GameEvents.INTERACTION, gs.pendingInteraction);
-		}
 		return;
 	}
 
 	// Build context from pending + response
-	const responseContext = buildResponseContext(type, value, pCtx);
+	const responseContext = buildResponseContext(interactionType, value, pCtx);
 	gs.pendingInteraction = null;
 
 	// Re-run the effect with the response context
@@ -445,6 +454,14 @@ export function handleRespond(io, socket, payload) {
 	);
 
 	if (!result.ok && !result.needsInteraction) {
+		if (gs.phase === "resolution") {
+			const effPlayer = getPlayer(gs, effectingPlayer.userId);
+			if (effPlayer && !effPlayer.activeEffectsUsed.includes(cardId)) {
+				effPlayer.activeEffectsUsed.push(cardId);
+			}
+			broadcastDelta(io, gs);
+			return;
+		}
 		return gameError(socket, result.error ?? "Response failed");
 	}
 
@@ -474,6 +491,9 @@ function buildResponseContext(type, value, pCtx) {
 		case "target":
 			return { ...pCtx, targetUserId: value };
 		case "card":
+			if (pCtx?.phase === "pickTargetCard") {
+				return { ...pCtx, targetCardId: value, cardId: value, value };
+			}
 			return { ...pCtx, cardId: value, value };
 		case "cards":
 			return { ...pCtx, cardIds: value, value };

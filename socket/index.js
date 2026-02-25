@@ -55,6 +55,9 @@ export function registerSocketHandlers(io) {
 		console.log(
 			`[socket] connected: ${socket.id} userId: ${userId} username: ${username}`,
 		);
+		socket.onAny((event, ...args) => {
+			console.log("EVENT:", event, args);
+		});
 		const pending = cancelDisconnect(userId);
 
 		if (pending) {

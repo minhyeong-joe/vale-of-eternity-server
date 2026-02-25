@@ -1,6 +1,59 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+
 import User from "../models/User.js";
+
+// Google SSO handler
+export async function googleSignIn(req, res) {
+	const { idToken } = req.body;
+	if (!idToken) {
+		return res.status(400).json({ message: "Missing Google ID token" });
+	}
+	try {
+		// Verify Google token
+		const googleRes = await fetch(
+			`https://oauth2.googleapis.com/tokeninfo?id_token=${idToken}`,
+		);
+		if (!googleRes.ok) {
+			return res.status(401).json({ message: "Invalid Google token" });
+		}
+		const googleData = await googleRes.json();
+		const { email, name, sub } = googleData;
+		if (!email) {
+			return res.status(400).json({ message: "Google token missing email" });
+		}
+
+		// Upsert user by email
+		let user = await User.findOne({ email });
+		if (!user) {
+			// Use Google sub as username fallback if needed
+			const username = name || email.split("@")[0] || sub;
+			user = new User({
+				username,
+				email,
+				password: null,
+			});
+			await user.save();
+		}
+
+		// Issue app JWT
+		const token = jwt.sign(
+			{ userId: user._id.toString(), username: user.username },
+			process.env.JWT_SECRET,
+			{ expiresIn: "4h" },
+		);
+
+		res.status(200).json({
+			message: "Google sign in successful",
+			data: {
+				email: user.email,
+				client_token: token,
+			},
+		});
+	} catch (error) {
+		res.status(500).json({ message: "Server error" });
+	}
+}
 
 const HASH_SALT = 10;
 const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
