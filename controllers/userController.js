@@ -56,7 +56,7 @@ export async function googleSignIn(req, res) {
 }
 
 const HASH_SALT = 10;
-const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+const PASSWORD_REGEX = /^(?=.*[a-z])(?=.*\d).{8,}$/;
 
 export async function signUp(req, res) {
 	console.log("[userController] signUp called with body:", req.body);
@@ -65,7 +65,7 @@ export async function signUp(req, res) {
 		if (!PASSWORD_REGEX.test(password)) {
 			return res.status(400).json({
 				message:
-					"Password must be at least 8 characters and include at least one uppercase letter, one lowercase letter, and one number",
+					"Password must be at least 8 characters and include at least one lowercase letter and one number",
 			});
 		}
 
