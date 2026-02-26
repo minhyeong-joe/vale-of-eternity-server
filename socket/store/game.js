@@ -130,6 +130,15 @@ export function deleteGame(roomId) {
 	games.delete(roomId);
 }
 
+export function updateGamePlayerSocketId(roomId, userId, newSocketId) {
+	const gs = games.get(roomId);
+	if (!gs) return false;
+	const player = gs.players.find((p) => p.userId === userId);
+	if (!player) return false;
+	player.socketId = newSocketId;
+	return true;
+}
+
 // ─── Round / phase management ─────────────────────────────────────────────
 
 /**

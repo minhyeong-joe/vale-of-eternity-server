@@ -30,7 +30,12 @@ import {
 	handleRespond,
 	handleEndTurn,
 } from "./handlers/game.js";
-import { getGame, deleteGame, toClientState } from "./store/game.js";
+import {
+	getGame,
+	deleteGame,
+	toClientState,
+	updateGamePlayerSocketId,
+} from "./store/game.js";
 
 export function registerSocketHandlers(io) {
 	// check token for username and userId
@@ -70,6 +75,7 @@ export function registerSocketHandlers(io) {
 			const restored = updatePlayerSocketId(pending.roomId, userId, socket.id);
 
 			if (restored) {
+				updateGamePlayerSocketId(pending.roomId, userId, socket.id);
 				socket.join(pending.roomId);
 				const room = getRoomByUserId(userId);
 				if (room) {
@@ -134,7 +140,10 @@ export function registerSocketHandlers(io) {
 		// Re-send game state on client request (e.g. page refresh race condition)
 		socket.on(GameEvents.REQUEST_STATE, () => {
 			const room = getRoomByUserId(userId);
-			if (!room) return;
+			if (!room) {
+				socket.emit(GameEvents.ENDED, { reason: "session_expired", username });
+				return;
+			}
 			const gs = getGame(room.id);
 			if (gs) {
 				socket.emit(GameEvents.STATE, toClientState(gs, userId));

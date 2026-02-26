@@ -25,6 +25,7 @@ const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
 	cors: corsOptions,
+	pingTimeout: 30000, // 30s ping timeout to allow for mobile devices sleeping
 });
 
 registerSocketHandlers(io);
