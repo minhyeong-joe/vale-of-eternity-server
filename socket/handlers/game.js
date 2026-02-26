@@ -62,6 +62,20 @@ function gameError(socket, message) {
 	socket.emit(GameEvents.ERROR, { message });
 }
 
+function emitInteractionIfPending(io, gs) {
+	if (!gs.pendingInteraction) return;
+	const forPlayer = getPlayer(gs, gs.pendingInteraction.forUserId);
+	if (!forPlayer) return;
+	io.to(forPlayer.socketId).emit(GameEvents.INTERACTION, gs.pendingInteraction);
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "interaction",
+		userId: forPlayer.userId,
+		username: forPlayer.username,
+		cardId: gs.pendingInteraction.cardId,
+		interactionType: gs.pendingInteraction.type,
+	});
+}
+
 // ─── game:start ────────────────────────────────────────────────────────────
 
 export function handleGameStart(io, socket) {
@@ -88,6 +102,11 @@ export function handleGameStart(io, socket) {
 
 	broadcastState(io, gs);
 	io.to(room.id).emit(RoomEvents.UPDATED, { roomDetail: toRoomDetail(room) });
+	io.to(room.id).emit(GameEvents.ACTION, {
+		action: "start",
+		userId,
+		username: getPlayer(gs, userId)?.username ?? "",
+	});
 	console.log(`[game] Started in room ${room.id} — round ${gs.round}`);
 }
 
@@ -125,6 +144,12 @@ export function handleHuntPick(io, socket, payload) {
 	}
 
 	broadcastDelta(io, gs);
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "hunt-pick",
+		userId,
+		username: getPlayer(gs, userId)?.username ?? "",
+		cardId,
+	});
 }
 
 // ─── game:sell ─────────────────────────────────────────────────────────────
@@ -168,9 +193,14 @@ export function handleSell(io, socket, payload) {
 
 	checkStoneOverflow(gs, userId);
 	broadcastDelta(io, gs);
-	if (gs.pendingInteraction) {
-		io.to(player.socketId).emit(GameEvents.INTERACTION, gs.pendingInteraction);
-	}
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "sell",
+		userId,
+		username: player.username,
+		cardId,
+		stonesGained: { red: reward.red ?? 0, blue: reward.blue ?? 0, purple: reward.purple ?? 0 },
+	});
+	emitInteractionIfPending(io, gs);
 }
 
 // ─── game:tame ─────────────────────────────────────────────────────────────
@@ -209,6 +239,12 @@ export function handleTame(io, socket, payload) {
 	fireOnTameTriggers(gs, player, cardId);
 
 	broadcastDelta(io, gs);
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "tame",
+		userId,
+		username: player.username,
+		cardId,
+	});
 }
 
 // ─── game:summon ───────────────────────────────────────────────────────────
@@ -268,17 +304,13 @@ export function handleSummon(io, socket, payload) {
 
 	checkStoneOverflow(gs, userId);
 	broadcastDelta(io, gs);
-
-	// If pending interaction, notify the target player
-	if (gs.pendingInteraction) {
-		const forPlayer = getPlayer(gs, gs.pendingInteraction.forUserId);
-		if (forPlayer) {
-			io.to(forPlayer.socketId).emit(
-				GameEvents.INTERACTION,
-				gs.pendingInteraction,
-			);
-		}
-	}
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "summon",
+		userId,
+		username: player.username,
+		cardId,
+	});
+	emitInteractionIfPending(io, gs);
 }
 
 // ─── game:remove ───────────────────────────────────────────────────────────
@@ -327,6 +359,12 @@ export function handleRemove(io, socket, payload) {
 	recomputePermanents(player);
 
 	broadcastDelta(io, gs);
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "remove",
+		userId,
+		username: player.username,
+		cardId,
+	});
 }
 
 // ─── game:activate ─────────────────────────────────────────────────────────
@@ -365,16 +403,13 @@ export function handleActivate(io, socket, payload) {
 
 	checkStoneOverflow(gs, userId);
 	broadcastDelta(io, gs);
-
-	if (gs.pendingInteraction) {
-		const forPlayer = getPlayer(gs, gs.pendingInteraction.forUserId);
-		if (forPlayer) {
-			io.to(forPlayer.socketId).emit(
-				GameEvents.INTERACTION,
-				gs.pendingInteraction,
-			);
-		}
-	}
+	io.to(gs.roomId).emit(GameEvents.ACTION, {
+		action: "activate",
+		userId,
+		username: player.username,
+		cardId,
+	});
+	emitInteractionIfPending(io, gs);
 }
 
 // ─── game:respond ──────────────────────────────────────────────────────────
@@ -394,6 +429,14 @@ export function handleRespond(io, socket, payload) {
 		context: pCtx,
 	} = gs.pendingInteraction;
 	const { value } = payload ?? {};
+
+	const respondAction = {
+		action: "respond",
+		userId,
+		username: getPlayer(gs, userId)?.username ?? "",
+		cardId,
+		interactionType,
+	};
 
 	// Stone overflow: player sends kept stone counts { red, blue, purple } summing to cap
 	if (gs.pendingInteraction.type === "stoneOverflow") {
@@ -425,6 +468,7 @@ export function handleRespond(io, socket, payload) {
 		player.stones.purple = purple;
 		gs.pendingInteraction = null;
 		broadcastDelta(io, gs);
+		io.to(gs.roomId).emit(GameEvents.ACTION, respondAction);
 		return;
 	}
 
@@ -522,16 +566,8 @@ export function handleRespond(io, socket, payload) {
 	}
 
 	broadcastDelta(io, gs);
-
-	if (gs.pendingInteraction) {
-		const forPlayer = getPlayer(gs, gs.pendingInteraction.forUserId);
-		if (forPlayer) {
-			io.to(forPlayer.socketId).emit(
-				GameEvents.INTERACTION,
-				gs.pendingInteraction,
-			);
-		}
-	}
+	io.to(gs.roomId).emit(GameEvents.ACTION, respondAction);
+	emitInteractionIfPending(io, gs);
 }
 
 function buildResponseContext(type, value, pCtx) {
@@ -565,6 +601,12 @@ export function handleEndTurn(io, socket) {
 	if (gs.players[gs.activePlayerIndex]?.userId !== userId)
 		return gameError(socket, "Not your turn");
 
+	const endTurnAction = {
+		action: "end-turn",
+		userId,
+		username: getPlayer(gs, userId)?.username ?? "",
+	};
+
 	if (gs.phase === "action") {
 		// Rule: cannot end turn if any markers remain on board
 		if (playerHasBoardMarkers(gs, userId)) {
@@ -585,6 +627,7 @@ export function handleEndTurn(io, socket) {
 		}
 
 		broadcastDelta(io, gs);
+		io.to(gs.roomId).emit(GameEvents.ACTION, endTurnAction);
 		return;
 	}
 
@@ -616,6 +659,7 @@ export function handleEndTurn(io, socket) {
 		} else {
 			broadcastDelta(io, gs);
 		}
+		io.to(gs.roomId).emit(GameEvents.ACTION, endTurnAction);
 		return;
 	}
 

@@ -35,6 +35,8 @@ export const GameEvents = Object.freeze({
 	ERROR: "game:error",
 	/** server -> client | payload: { reason, username }   | Game ended mid-match (e.g. player permanently left) */
 	ENDED: "game:ended",
+	/** server -> client | payload: GameActionPayload      | Broadcast to all room sockets after any player takes an action */
+	ACTION: "game:action",
 });
 
 // ─── Lobby Events ──────────────────────────────────────────────────────────
