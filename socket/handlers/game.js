@@ -296,7 +296,6 @@ export function handleRemove(io, socket, payload) {
 
 	const { payment } = payload ?? {};
 	if (!payment) return gameError(socket, "payment required");
-	console.log("payment:", payment);
 
 	const player = getPlayer(gs, userId);
 	if (!player.area.includes(cardId))
@@ -308,7 +307,6 @@ export function handleRemove(io, socket, payload) {
 		stoneValue(player, "red", payment.red ?? 0) +
 		stoneValue(player, "blue", payment.blue ?? 0) +
 		stoneValue(player, "purple", payment.purple ?? 0);
-	console.log("removeCost:", removeCost, "paid:", paid);
 	if (paid < removeCost) {
 		return gameError(
 			socket,
