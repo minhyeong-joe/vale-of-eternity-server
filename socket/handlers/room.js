@@ -6,6 +6,8 @@ import {
 	updateRoom,
 	toRoomInfo,
 	toRoomDetail,
+	togglePlayerReady,
+	getRoomBySocketId,
 } from "../store/rooms.js";
 import { LobbyEvents, RoomEvents, GameEvents } from "../contracts.js";
 import { getGame, deleteGame } from "../store/game.js";
@@ -193,4 +195,34 @@ export function handleRoomUpdate(io, socket, payload) {
 	io.to("lobby").emit(LobbyEvents.ROOM_UPDATED, toRoomInfo(room));
 
 	console.log(`[room] ${username} (userId: ${userId}) updated room: ${roomId}`);
+}
+
+/**
+ * @param {import("socket.io").Server} io
+ * @param {import("socket.io").Socket} socket
+ */
+export function handleRoomReady(io, socket) {
+	const { userId, username } = socket.data;
+	const room = getRoomBySocketId(socket.id);
+	if (!room) {
+		return socket.emit(RoomEvents.ERROR, {
+			code: "ROOM_NOT_FOUND",
+			message: "Room not found",
+		});
+	}
+
+	const success = togglePlayerReady(room.id, userId);
+	if (!success) {
+		return socket.emit(RoomEvents.ERROR, {
+			code: "PLAYER_NOT_FOUND",
+			message: "Player not found in room",
+		});
+	}
+
+	io.to(room.id).emit(RoomEvents.UPDATED, { roomDetail: toRoomDetail(room) });
+	io.to("lobby").emit(LobbyEvents.ROOM_UPDATED, toRoomInfo(room));
+
+	console.log(
+		`[room] ${username} (userId: ${userId}) toggled ready in room: ${room.id}`,
+	);
 }

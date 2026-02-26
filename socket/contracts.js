@@ -65,6 +65,8 @@ export const RoomEvents = Object.freeze({
 	LEAVE: "room:leave",
 	/** client -> server | payload: RoomUpdatePayload  | Update room settings (host only, waiting status only) */
 	UPDATE: "room:update",
+	/** client -> server | payload: none               | Player is ready */
+	READY: "room:ready",
 	/** server -> client | payload: RoomJoinedPayload  | Sent to all room sockets when any player joins */
 	JOINED: "room:joined",
 	/** server -> client | payload: RoomLeftPayload    | Sent to leaving socket (no roomDetail) and remaining sockets (with roomDetail) */

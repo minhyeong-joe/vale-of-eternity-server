@@ -26,11 +26,11 @@ export function handleGenieExalted(gs, player, response, resolveEffect) {
 			});
 
 		if (options.length === 0) {
-			return { ok: false, error: "No other card in area has an active effect" };
+			return { ok: true }; // no targets — activateHandler will mark card as used
 		}
 
 		gs.pendingInteraction = {
-			type: "choice",
+			type: "card",
 			forUserId: player.userId,
 			cardId: 50,
 			context: { prompt: "Choose a card to copy its active effect", options },
@@ -50,5 +50,11 @@ export function handleGenieExalted(gs, player, response, resolveEffect) {
 		return { ok: false, error: "Chosen card has no active effect" };
 
 	gs.pendingInteraction = null;
+	// Mark Genie Exalted as used now — the target has been chosen and activation is underway.
+	// We do this before delegating because if the sub-card needs interaction the caller's
+	// !needsInteraction guard would otherwise skip the marking entirely.
+	if (!player.activeEffectsUsed.includes(50)) {
+		player.activeEffectsUsed.push(50);
+	}
 	return resolveEffect(gs, player.userId, targetCardId, eIdx, null);
 }

@@ -142,6 +142,9 @@ export function startRound(gs) {
 	gs.boardZones = { fire: [], water: [], earth: [], wind: [], dragon: [] };
 	gs.boardMarkers = {};
 	gs.huntPicksDone = 0;
+	gs.players.forEach((p) => {
+		p.activeEffectsUsed = [];
+	});
 
 	// Rotate first player
 	const n = gs.players.length;
@@ -259,9 +262,10 @@ export function stoneValue(player, stoneType, count = null) {
 	const BASE = { red: 1, blue: 3, purple: 6 };
 	let total = 0;
 	for (const t of types) {
-		const effectiveType = player.stoneOverrides?.find((o) => o.from === t)?.countsAs ?? t;
+		const effectiveType =
+			player.stoneOverrides?.find((o) => o.from === t)?.countsAs ?? t;
 		const baseValue = BASE[effectiveType] ?? BASE[t];
-		const bonus = (player.stoneValueBonus[effectiveType] ?? 0);
+		const bonus = player.stoneValueBonus[effectiveType] ?? 0;
 		const cnt = count ?? player.stones[t];
 		total += cnt * (baseValue + bonus);
 	}

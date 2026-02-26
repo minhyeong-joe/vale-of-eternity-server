@@ -280,14 +280,14 @@ export const CardEffectRepo = {
 		],
 	},
 
-	// Leviathan (20) — instant: earn 7; opponent discards a summoned dragon card
+	// Leviathan (20) — instant: earn 7; player discards a summoned dragon card
 	20: {
 		effects: [
 			{
 				type: "instant",
 				steps: [
+					{ action: "playerDiscardCard", filter: { family: "dragon" } },
 					{ action: "earnScore", amount: 7 },
-					{ action: "opponentDiscardCard", filter: { family: "dragon" } },
 				],
 			},
 		],
@@ -881,14 +881,14 @@ export const CardEffectRepo = {
 		effects: [{ type: "instant", steps: [{ action: "recoverEarnCost" }] }],
 	},
 
-	// Boulder (62) — instant: earn score 8; opponent discards a wind card
+	// Boulder (62) — instant: earn score 8; player discards a wind card
 	62: {
 		effects: [
 			{
 				type: "instant",
 				steps: [
+					{ action: "playerDiscardCard", filter: { family: "wind" } },
 					{ action: "earnScore", amount: 8 },
-					{ action: "opponentDiscardCard", filter: { family: "wind" } },
 				],
 			},
 		],
@@ -906,15 +906,15 @@ export const CardEffectRepo = {
 		],
 	},
 
-	// Ember (64) — instant: earn score 7; opponent discards a water card
+	// Ember (64) — instant: earn score 7; player discards a water card
 	// Blocked if no player has a summoned water card
 	64: {
 		effects: [
 			{
 				type: "instant",
 				steps: [
+					{ action: "playerDiscardCard", filter: { family: "water" } },
 					{ action: "earnScore", amount: 7 },
-					{ action: "opponentDiscardCard", filter: { family: "water" } },
 				],
 			},
 		],
@@ -936,27 +936,27 @@ export const CardEffectRepo = {
 		],
 	},
 
-	// Gust (66) — instant: earn score 8; opponent discards an earth card
+	// Gust (66) — instant: earn score 8; player discards an earth card
 	66: {
 		effects: [
 			{
 				type: "instant",
 				steps: [
+					{ action: "playerDiscardCard", filter: { family: "earth" } },
 					{ action: "earnScore", amount: 8 },
-					{ action: "opponentDiscardCard", filter: { family: "earth" } },
 				],
 			},
 		],
 	},
 
-	// Marina (67) — instant: earn score 7; opponent discards a fire card
+	// Marina (67) — instant: earn score 7; player discards a fire card
 	67: {
 		effects: [
 			{
 				type: "instant",
 				steps: [
+					{ action: "playerDiscardCard", filter: { family: "fire" } },
 					{ action: "earnScore", amount: 7 },
-					{ action: "opponentDiscardCard", filter: { family: "fire" } },
 				],
 			},
 		],
@@ -1007,13 +1007,13 @@ export const CardEffectRepo = {
 };
 
 /**
- * Cards whose instant summon is blocked if no target exists (opponentDiscardCard).
+ * Cards whose instant summon is blocked if no target exists (playerDiscardCard).
  * Used for pre-summon feasibility checks.
  */
 export const SUMMON_BLOCK_CHECKS = {
-	20: { action: "opponentDiscardCard", filter: { family: "dragon" } },
-	62: { action: "opponentDiscardCard", filter: { family: "wind" } },
-	64: { action: "opponentDiscardCard", filter: { family: "water" } },
-	66: { action: "opponentDiscardCard", filter: { family: "earth" } },
-	67: { action: "opponentDiscardCard", filter: { family: "fire" } },
+	20: { action: "playerDiscardCard", filter: { family: "dragon" } },
+	62: { action: "playerDiscardCard", filter: { family: "wind" } },
+	64: { action: "playerDiscardCard", filter: { family: "water" } },
+	66: { action: "playerDiscardCard", filter: { family: "earth" } },
+	67: { action: "playerDiscardCard", filter: { family: "fire" } },
 };

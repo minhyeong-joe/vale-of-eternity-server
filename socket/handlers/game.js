@@ -6,7 +6,13 @@
  */
 
 import { GameEvents, RoomEvents } from "../contracts.js";
-import { getRoom, updateRoom, toRoomInfo } from "../store/rooms.js";
+import {
+	getRoom,
+	updateRoom,
+	toRoomInfo,
+	toRoomDetail,
+	getRoomBySocketId,
+} from "../store/rooms.js";
 import { CardEffectRepo } from "../effects/repo.js";
 import {
 	createGame,
@@ -79,15 +85,24 @@ export function handleGameStart(io, socket) {
 	if (!room) return gameError(socket, "Room not found");
 	if (room.hostUserId !== userId)
 		return gameError(socket, "Only host can start the game");
-	if (room.status !== "waiting")
+	if (room.status !== "waiting" && room.status !== "finished")
 		return gameError(socket, "Game already started");
 	if (room.players.length < 2)
 		return gameError(socket, "Need at least 2 players");
+	if (room.players.some((p) => !p.isReady))
+		return gameError(socket, "Not all players are ready");
 
+	deleteGame(room.id);
 	room.status = "in-progress";
+	room.players.forEach((p) => {
+		if (p.userId !== room.hostUserId) {
+			p.isReady = false;
+		}
+	});
 	const gs = createGame(room.id, room.players);
 
 	broadcastState(io, gs);
+	io.to(room.id).emit(RoomEvents.UPDATED, { roomDetail: toRoomDetail(room) });
 	console.log(`[game] Started in room ${room.id} — round ${gs.round}`);
 }
 
@@ -256,6 +271,8 @@ export function handleSummon(io, socket, payload) {
 		if (iIdx !== -1) {
 			const result = resolveEffect(gs, userId, cardId, iIdx, { payment });
 			if (!result.ok && !result.needsInteraction) {
+				// State is already committed (card summoned, stones paid) — sync client before erroring
+				broadcastDelta(io, gs);
 				return gameError(socket, result.error);
 			}
 		}
@@ -393,7 +410,11 @@ export function handleRespond(io, socket, payload) {
 	if (gs.pendingInteraction.forUserId !== userId)
 		return gameError(socket, "Not your interaction");
 
-	const { type: interactionType, cardId, context: pCtx } = gs.pendingInteraction;
+	const {
+		type: interactionType,
+		cardId,
+		context: pCtx,
+	} = gs.pendingInteraction;
 	const { value } = payload ?? {};
 
 	// Stone overflow: player sends kept stone counts { red, blue, purple } summing to cap
@@ -402,7 +423,8 @@ export function handleRespond(io, socket, payload) {
 		const player = getPlayer(gs, userId);
 		if (!player) return gameError(socket, "Player not found");
 		if (
-			typeof value !== "object" || value === null ||
+			typeof value !== "object" ||
+			value === null ||
 			typeof value.red !== "number" ||
 			typeof value.blue !== "number" ||
 			typeof value.purple !== "number"
@@ -412,7 +434,11 @@ export function handleRespond(io, socket, payload) {
 		const { red, blue, purple } = value;
 		if (red < 0 || blue < 0 || purple < 0)
 			return gameError(socket, "Stone counts cannot be negative");
-		if (red > player.stones.red || blue > player.stones.blue || purple > player.stones.purple)
+		if (
+			red > player.stones.red ||
+			blue > player.stones.blue ||
+			purple > player.stones.purple
+		)
 			return gameError(socket, "Cannot keep more stones than you have");
 		if (red + blue + purple !== cap)
 			return gameError(socket, `Kept total must equal cap (${cap})`);
@@ -437,11 +463,16 @@ export function handleRespond(io, socket, payload) {
 	const def = CardEffectRepo[cardId];
 	if (!def) return gameError(socket, "No effect def for responding card");
 
-	// Find the relevant effect index
-	let eIdx = def.effects.findIndex(
-		(e) =>
-			(gs.phase === "resolution" && e.type === "active") ||
-			(gs.phase === "action" && e.type === "instant"),
+	// Find the relevant effect index.
+	// During action phase, Genie may have activated a card's active effect and parked it
+	// in pendingGenieActivations; in that case we must look for "active", not "instant".
+	const isGenieSubActivation =
+		gs.pendingGenieActivations?.activatingCardId === cardId;
+	let eIdx = def.effects.findIndex((e) =>
+		isGenieSubActivation
+			? e.type === "active"
+			: (gs.phase === "resolution" && e.type === "active") ||
+				(gs.phase === "action" && e.type === "instant"),
 	);
 	if (eIdx === -1) eIdx = 0;
 
@@ -473,6 +504,45 @@ export function handleRespond(io, socket, payload) {
 		}
 	}
 
+	if (!result.needsInteraction) {
+		checkStoneOverflow(gs, effectingPlayer.userId);
+	}
+
+	// Resume Genie activation sequence if a sub-card's interaction just fully resolved
+	if (
+		!result.needsInteraction &&
+		!gs.pendingInteraction &&
+		gs.pendingGenieActivations
+	) {
+		const { remainingCardIds, actingUserId, activatingCardId } =
+			gs.pendingGenieActivations;
+		gs.pendingGenieActivations = null;
+		const geniePlayer = getPlayer(gs, actingUserId);
+		if (geniePlayer) {
+			if (
+				activatingCardId &&
+				!geniePlayer.activeEffectsUsed.includes(activatingCardId)
+			) {
+				geniePlayer.activeEffectsUsed.push(activatingCardId);
+			}
+			const stillRemaining = remainingCardIds.filter((id) =>
+				geniePlayer.area.includes(id),
+			);
+			if (stillRemaining.length > 0) {
+				gs.pendingInteraction = {
+					type: "genieActivation",
+					forUserId: actingUserId,
+					cardId: 49,
+					context: {
+						phase: "geniePickNext",
+						prompt: "Genie — choose which card to activate",
+						options: stillRemaining,
+					},
+				};
+			}
+		}
+	}
+
 	broadcastDelta(io, gs);
 
 	if (gs.pendingInteraction) {
@@ -490,6 +560,8 @@ function buildResponseContext(type, value, pCtx) {
 	switch (type) {
 		case "target":
 			return { ...pCtx, targetUserId: value };
+		case "genieActivation":
+			return { ...pCtx, cardId: value, value };
 		case "card":
 			if (pCtx?.phase === "pickTargetCard") {
 				return { ...pCtx, targetCardId: value, cardId: value, value };
@@ -571,7 +643,6 @@ export function handleEndTurn(io, socket) {
 
 	gameError(socket, "Cannot end turn in this phase");
 }
-
 
 function endRound(io, gs) {
 	if (checkEndGame(gs)) {

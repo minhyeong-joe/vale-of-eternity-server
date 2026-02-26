@@ -11,7 +11,7 @@ import { randomUUID } from "crypto";
  *   password:     string | null,
  *   maxPlayers:   number,
  *   status:       'waiting' | 'in-progress' | 'finished',
- *   players:      Array<{ socketId: string, userId: string, username: string, isConnected: boolean }>,
+ *   players:      Array<{ socketId: string, userId: string, username: string, isConnected: boolean, isReady?: boolean }>,
  * }
  */
 
@@ -42,7 +42,15 @@ export function createRoom(
 		password: password ?? null,
 		maxPlayers: Math.min(Math.max(Number(maxPlayers) || 4, 2), 4),
 		status: "waiting",
-		players: [{ socketId: hostSocketId, userId, username, isConnected: true }],
+		players: [
+			{
+				socketId: hostSocketId,
+				userId,
+				username,
+				isConnected: true,
+				isReady: true,
+			},
+		],
 	};
 	rooms.set(id, room);
 	return room;
@@ -72,7 +80,13 @@ export function addPlayer(roomId, socketId, userId, username) {
 	if (room.status !== "waiting") return null;
 	if (room.players.some((p) => p.userId === userId)) return null;
 
-	room.players.push({ socketId, userId, username, isConnected: true });
+	room.players.push({
+		socketId,
+		userId,
+		username,
+		isConnected: true,
+		isReady: false,
+	});
 	return { room };
 }
 
@@ -99,6 +113,7 @@ export function removePlayer(roomId, socketId) {
 		room.hostSocketId = room.players[0].socketId;
 		room.hostUserId = room.players[0].userId;
 		room.hostUsername = room.players[0].username;
+		room.players[0].isReady = true;
 	}
 
 	return { room, deleted: false };
@@ -162,10 +177,11 @@ export function toRoomInfo(room) {
 export function toRoomDetail(room) {
 	return {
 		...toRoomInfo(room),
-		players: room.players.map(({ userId, username, isConnected }) => ({
+		players: room.players.map(({ userId, username, isConnected, isReady }) => ({
 			userId,
 			username,
 			isConnected,
+			isReady,
 		})),
 	};
 }
@@ -216,5 +232,20 @@ export function setPlayerConnected(roomId, userId, isConnected) {
 	const player = room.players.find((p) => p.userId === userId);
 	if (!player) return false;
 	player.isConnected = isConnected;
+	return true;
+}
+
+/**
+ * toggle isReady flag for a player in a room.
+ * @param {string} roomId
+ * @param {string} userId
+ * @returns {boolean} true if the player was found
+ */
+export function togglePlayerReady(roomId, userId) {
+	const room = rooms.get(roomId);
+	if (!room) return false;
+	const player = room.players.find((p) => p.userId === userId);
+	if (!player) return false;
+	player.isReady = !player.isReady;
 	return true;
 }

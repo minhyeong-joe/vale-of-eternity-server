@@ -9,7 +9,7 @@
 
 import { earnStones, earnScore, drawCards } from "../../store/game.js";
 
-const OPTIONS = ["purple", "draw", "blue2score4"];
+const OPTIONS = ["purple", "draw", "blue2", "score4"];
 
 /**
  * @param {object} gs
@@ -18,13 +18,13 @@ const OPTIONS = ["purple", "draw", "blue2score4"];
  * @returns {{ ok: boolean, needsInteraction?: boolean, error?: string }}
  */
 export function handleHydra(gs, player, response) {
-	if (!response) {
+	if (response?.choiceIndex === undefined) {
 		gs.pendingInteraction = {
 			type: "choice",
 			forUserId: player.userId,
 			cardId: 18,
 			context: {
-				prompt: "Choose 2 of the 3 Hydra rewards",
+				prompt: "Choose 2 of the 4 Hydra rewards",
 				options: OPTIONS,
 				pickCount: 2,
 			},
@@ -32,7 +32,7 @@ export function handleHydra(gs, player, response) {
 		return { ok: true, needsInteraction: true };
 	}
 
-	const { choices } = response;
+	const choices = response.choiceIndex;
 	if (!Array.isArray(choices) || choices.length !== 2) {
 		return { ok: false, error: "Hydra: must pick exactly 2 rewards" };
 	}
@@ -57,8 +57,10 @@ export function handleHydra(gs, player, response) {
 			case "draw":
 				drawCards(gs, player, 1);
 				break;
-			case "blue2score4":
+			case "blue2":
 				earnStones(player, "blue", 2);
+				break;
+			case "score4":
 				earnScore(player, 4);
 				break;
 		}

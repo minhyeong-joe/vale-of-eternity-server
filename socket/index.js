@@ -4,6 +4,7 @@ import {
 	handleRoomCreate,
 	handleRoomJoin,
 	handleRoomLeave,
+	handleRoomReady,
 	handleRoomUpdate,
 } from "./handlers/room.js";
 import { handleLobbyRooms } from "./handlers/lobby.js";
@@ -56,7 +57,12 @@ export function registerSocketHandlers(io) {
 			`[socket] connected: ${socket.id} userId: ${userId} username: ${username}`,
 		);
 		socket.onAny((event, ...args) => {
-			console.log("EVENT:", event, args);
+			console.log(
+				"EVENT:",
+				event,
+				args,
+				`(username: ${username} userId: ${userId})`,
+			);
 		});
 		const pending = cancelDisconnect(userId);
 
@@ -100,6 +106,9 @@ export function registerSocketHandlers(io) {
 		socket.on(RoomEvents.UPDATE, (payload) =>
 			handleRoomUpdate(io, socket, payload),
 		);
+		socket.on(RoomEvents.READY, () => {
+			handleRoomReady(io, socket);
+		});
 
 		// Game events
 		socket.on(GameEvents.START, () => handleGameStart(io, socket));
