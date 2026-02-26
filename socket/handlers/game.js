@@ -6,42 +6,28 @@
  */
 
 import { GameEvents, RoomEvents } from "../contracts.js";
-import {
-	getRoom,
-	updateRoom,
-	toRoomInfo,
-	toRoomDetail,
-	getRoomBySocketId,
-} from "../store/rooms.js";
+import { getRoom, toRoomDetail } from "../store/rooms.js";
 import { CardEffectRepo } from "../effects/repo.js";
 import {
 	createGame,
 	getGame,
 	deleteGame,
 	getPlayer,
-	getPlayerIndex,
 	toClientState,
 	summonCard,
-	discardFromHand,
 	discardFromArea,
-	recoverCard,
 	earnStones,
-	discardStones,
-	earnScore,
 	recomputePermanents,
 	validatePayment,
-	effectiveCost,
 	areaLimit,
 	playerHasBoardMarkers,
 	checkEndGame,
 	startActionPhase,
 	startResolutionPhase,
 	startRound,
-	advanceResolutionTurn,
-	totalStones,
-	stoneCap,
 	SELL_REWARDS,
 	checkStoneOverflow,
+	stoneValue,
 } from "../store/game.js";
 import { CardData } from "../effects/cardData.js";
 import {
@@ -49,7 +35,6 @@ import {
 	fireOnSummonTriggers,
 	fireOnTameTriggers,
 	checkSummonFeasibility,
-	getActivatableCards,
 	hasResolvableActiveEffect,
 } from "../effects/index.js";
 
@@ -309,40 +294,35 @@ export function handleRemove(io, socket, payload) {
 	const { cardId } = payload ?? {};
 	if (!cardId) return gameError(socket, "cardId required");
 
+	const { payment } = payload ?? {};
+	if (!payment) return gameError(socket, "payment required");
+	console.log("payment:", payment);
+
 	const player = getPlayer(gs, userId);
 	if (!player.area.includes(cardId))
 		return gameError(socket, "Card not in your area");
 
 	// Remove costs: stone value ≥ current round number
 	const removeCost = gs.round;
-	const playerStoneValue =
-		player.stones.red + player.stones.blue * 3 + player.stones.purple * 6;
-	if (playerStoneValue < removeCost) {
+	const paid =
+		stoneValue(player, "red", payment.red ?? 0) +
+		stoneValue(player, "blue", payment.blue ?? 0) +
+		stoneValue(player, "purple", payment.purple ?? 0);
+	console.log("removeCost:", removeCost, "paid:", paid);
+	if (paid < removeCost) {
 		return gameError(
 			socket,
-			`Remove costs ${removeCost} stone value. You only have ${playerStoneValue}`,
+			`Remove costs ${removeCost} stone value. You only paid ${paid}`,
 		);
 	}
-
-	// Deduct stones (cheapest first is auto-handled; but actual stone removal needs player choice in strict rules)
-	// For simplicity: auto-deduct cheapest first
-	let remaining = removeCost;
-	while (remaining > 0) {
-		if (player.stones.red > 0 && remaining >= 1) {
-			player.stones.red--;
-			remaining -= 1;
-		} else if (player.stones.blue > 0 && remaining >= 3) {
-			player.stones.blue--;
-			remaining -= 3;
-		} else if (player.stones.blue > 0) {
-			player.stones.blue--;
-			remaining -= 3;
-		} // overpay
-		else if (player.stones.purple > 0) {
-			player.stones.purple--;
-			remaining -= 6;
-		} // overpay
-		else break;
+	// for each payment stones, check if player has them and deduct
+	for (const color of Object.keys(payment)) {
+		const count = payment[color] ?? 0;
+		if (count < 0)
+			return gameError(socket, "Payment cannot have negative counts");
+		if (count > player.stones[color])
+			return gameError(socket, `Not enough ${color} stones`);
+		player.stones[color] -= count;
 	}
 
 	discardFromArea(gs, player, cardId);
