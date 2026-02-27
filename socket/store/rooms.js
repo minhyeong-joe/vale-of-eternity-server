@@ -177,6 +177,7 @@ export function toRoomInfo(room) {
 export function toRoomDetail(room) {
 	return {
 		...toRoomInfo(room),
+		password: room.password ?? "",
 		players: room.players.map(({ userId, username, isConnected, isReady }) => ({
 			userId,
 			username,
