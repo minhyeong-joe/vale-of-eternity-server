@@ -356,6 +356,7 @@ export const CardEffectRepo = {
 						options: [
 							{
 								label: "Exchange 1 blue → 1 purple",
+								requireStone: "blue",
 								steps: [
 									{
 										action: "exchangeStone",
@@ -367,6 +368,7 @@ export const CardEffectRepo = {
 							},
 							{
 								label: "Exchange 1 purple → 3 blue",
+								requireStone: "purple",
 								steps: [
 									{
 										action: "exchangeStone",

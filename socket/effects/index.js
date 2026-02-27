@@ -177,21 +177,29 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 		}
 
 		case "exchangeStone": {
+			console.log("Exchange step:", step);
 			// e.g. exchange blue→purple (1 for 1) or purple→blue (1 to 3)
 			if (step.to === "blue" && step.count > 1) {
 				// Exchange 1 purple → 3 blue (Snail Maiden)
 				if (!discardStones(player, step.from)) {
+					console.log(effectType);
 					if (effectType !== "instant")
 						return {
 							ok: true,
 							skipped: true,
 							message: `No ${step.from} stone to exchange`,
 						};
-					return { ok: false, error: `No ${step.from} stone` };
+					return {
+						ok: false,
+						error: `No ${step.from} stone to exchange`,
+					};
 				}
 				earnStones(player, step.to, step.count);
 				return { ok: true };
 			}
+			// if (step.to === "purple" && step.count >= 1) {
+
+			// }
 			if (!exchangeStones(player, step.from, step.to, step.count ?? 1)) {
 				if (effectType !== "instant")
 					return {
@@ -470,10 +478,17 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 						if (def) {
 							const iIdx = def.effects.findIndex((e) => e.type === "instant");
 							if (iIdx !== -1) {
-								const innerResult = resolveEffect(gs, player.userId, chosen, iIdx, {
-									payment: { red: 0, blue: 0, purple: 0 },
-								});
-								if (innerResult.needsInteraction) return { ok: true, needsInteraction: true };
+								const innerResult = resolveEffect(
+									gs,
+									player.userId,
+									chosen,
+									iIdx,
+									{
+										payment: { red: 0, blue: 0, purple: 0 },
+									},
+								);
+								if (innerResult.needsInteraction)
+									return { ok: true, needsInteraction: true };
 							}
 						}
 						return { ok: true };
@@ -496,10 +511,17 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 				if (def) {
 					const iIdx = def.effects.findIndex((e) => e.type === "instant");
 					if (iIdx !== -1) {
-						const innerResult = resolveEffect(gs, player.userId, summonCardId, iIdx, {
-							payment: { red: 0, blue: 0, purple: 0 },
-						});
-						if (innerResult.needsInteraction) return { ok: true, needsInteraction: true };
+						const innerResult = resolveEffect(
+							gs,
+							player.userId,
+							summonCardId,
+							iIdx,
+							{
+								payment: { red: 0, blue: 0, purple: 0 },
+							},
+						);
+						if (innerResult.needsInteraction)
+							return { ok: true, needsInteraction: true };
 					}
 				}
 				return { ok: true };
@@ -515,7 +537,9 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 				if (player.hand.length === 0) {
 					return { ok: false, error: "No cards left to summon" };
 				}
-				const summonOptions = player.hand.filter((id) => summonInstantFeasible(gs, player, id));
+				const summonOptions = player.hand.filter((id) =>
+					summonInstantFeasible(gs, player, id),
+				);
 				if (summonOptions.length === 0) {
 					return { ok: false, error: "No valid card to summon for free" };
 				}
@@ -668,16 +692,22 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 		}
 
 		case "choice": {
+			const choiceInteraction = {
+				type: "choice",
+				forUserId: player.userId,
+				cardId: sourceCardId,
+				context: {
+					prompt: "Choose an option",
+					options: step.options.map((o) => o.label),
+				},
+			};
 			if (context?.choiceIndex === undefined) {
-				gs.pendingInteraction = {
-					type: "choice",
-					forUserId: player.userId,
-					cardId: sourceCardId,
-					context: {
-						prompt: "Choose an option",
-						options: step.options.map((o) => o.label),
-					},
-				};
+				const anyViable = step.options.some(
+					(o) => !o.requireStone || (player.stones[o.requireStone] ?? 0) > 0,
+				);
+				if (!anyViable)
+					return { ok: true, skipped: true, message: "No valid exchange option available" };
+				gs.pendingInteraction = choiceInteraction;
 				return { ok: true, needsInteraction: true };
 			}
 			const raw = context.choiceIndex;
@@ -689,12 +719,17 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 			if (idx < 0 || idx >= step.options.length) {
 				return { ok: false, error: "Invalid option" };
 			}
+			const chosen = step.options[idx];
+			if (chosen.requireStone && (player.stones[chosen.requireStone] ?? 0) === 0) {
+				gs.pendingInteraction = choiceInteraction;
+				return { ok: false, error: `No ${chosen.requireStone} stone to exchange` };
+			}
 			gs.pendingInteraction = null;
 			return executeSteps(
 				gs,
 				player,
 				sourceCardId,
-				step.options[idx].steps,
+				chosen.steps,
 				context,
 				effectType,
 			);
@@ -940,12 +975,16 @@ function summonInstantFeasible(gs, player, id) {
 	const def = CardEffectRepo[id];
 	const inst = def?.effects.find((e) => e.type === "instant");
 	if (!inst) return true;
-	const postSummonPlayer = { ...player, hand: player.hand.filter((hid) => hid !== id) };
+	const postSummonPlayer = {
+		...player,
+		hand: player.hand.filter((hid) => hid !== id),
+	};
 	if (id === 68) {
 		// Scorch: needs at least one OTHER card in area with a feasible instant
 		return player.area.some((aid) => {
 			const aDef = CardEffectRepo[aid];
-			if (!aDef || !aDef.effects.some((e) => e.type === "instant")) return false;
+			if (!aDef || !aDef.effects.some((e) => e.type === "instant"))
+				return false;
 			return isInstantFeasible(gs, postSummonPlayer, aid);
 		});
 	}

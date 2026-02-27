@@ -46,12 +46,15 @@ function buildSnakeDraftOrder(n, firstPlayerIndex) {
 // ─── Shuffle ──────────────────────────────────────────────────────────────
 
 function shuffle(arr) {
-	const a = [...arr];
+	// const a = [...arr];
+	console.log(arr.filter((id) => id === 24));
+	const a = arr.filter((id) => id !== 24);
 	for (let i = a.length - 1; i > 0; i--) {
 		const j = Math.floor(Math.random() * (i + 1));
 		[a[i], a[j]] = [a[j], a[i]];
 	}
-	return a;
+	return [arr[23], ...a];
+	// return a;
 }
 
 // ─── Game creation ─────────────────────────────────────────────────────────

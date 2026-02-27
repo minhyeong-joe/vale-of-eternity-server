@@ -198,7 +198,11 @@ export function handleSell(io, socket, payload) {
 		userId,
 		username: player.username,
 		cardId,
-		stonesGained: { red: reward.red ?? 0, blue: reward.blue ?? 0, purple: reward.purple ?? 0 },
+		stonesGained: {
+			red: reward.red ?? 0,
+			blue: reward.blue ?? 0,
+			purple: reward.purple ?? 0,
+		},
 	});
 	emitInteractionIfPending(io, gs);
 }
@@ -506,8 +510,14 @@ export function handleRespond(io, socket, payload) {
 		responseContext,
 	);
 
+	console.log("Effect response result:", result);
+
 	if (!result.ok && !result.needsInteraction) {
 		if (gs.phase === "resolution") {
+			if (gs.pendingInteraction) {
+				broadcastDelta(io, gs);
+				return gameError(socket, result.error ?? "Response failed");
+			}
 			const effPlayer = getPlayer(gs, effectingPlayer.userId);
 			if (effPlayer && !effPlayer.activeEffectsUsed.includes(cardId)) {
 				effPlayer.activeEffectsUsed.push(cardId);
