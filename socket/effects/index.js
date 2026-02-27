@@ -177,12 +177,10 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 		}
 
 		case "exchangeStone": {
-			console.log("Exchange step:", step);
 			// e.g. exchange blue→purple (1 for 1) or purple→blue (1 to 3)
 			if (step.to === "blue" && step.count > 1) {
 				// Exchange 1 purple → 3 blue (Snail Maiden)
 				if (!discardStones(player, step.from)) {
-					console.log(effectType);
 					if (effectType !== "instant")
 						return {
 							ok: true,
@@ -706,7 +704,11 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 					(o) => !o.requireStone || (player.stones[o.requireStone] ?? 0) > 0,
 				);
 				if (!anyViable)
-					return { ok: true, skipped: true, message: "No valid exchange option available" };
+					return {
+						ok: true,
+						skipped: true,
+						message: "No valid exchange option available",
+					};
 				gs.pendingInteraction = choiceInteraction;
 				return { ok: true, needsInteraction: true };
 			}
@@ -720,9 +722,15 @@ function executeStep(gs, player, sourceCardId, step, context, effectType) {
 				return { ok: false, error: "Invalid option" };
 			}
 			const chosen = step.options[idx];
-			if (chosen.requireStone && (player.stones[chosen.requireStone] ?? 0) === 0) {
+			if (
+				chosen.requireStone &&
+				(player.stones[chosen.requireStone] ?? 0) === 0
+			) {
 				gs.pendingInteraction = choiceInteraction;
-				return { ok: false, error: `No ${chosen.requireStone} stone to exchange` };
+				return {
+					ok: false,
+					error: `No ${chosen.requireStone} stone to exchange`,
+				};
 			}
 			gs.pendingInteraction = null;
 			return executeSteps(

@@ -510,8 +510,6 @@ export function handleRespond(io, socket, payload) {
 		responseContext,
 	);
 
-	console.log("Effect response result:", result);
-
 	if (!result.ok && !result.needsInteraction) {
 		if (gs.phase === "resolution") {
 			if (gs.pendingInteraction) {
