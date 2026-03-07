@@ -847,13 +847,13 @@ export const CardEffectRepo = {
 		],
 	},
 
-	// Tengu (59) — instant: earn 1 purple stone; put self on top of draw deck
+	// Tengu (59) — instant: earn score 6; put self on top of draw deck
 	59: {
 		effects: [
 			{
 				type: "instant",
 				steps: [
-					{ action: "earnStone", stoneType: "purple", count: 1 },
+					{ action: "earnScore", amount: 6 },
 					{ action: "putSelfOnDeck" },
 				],
 			},
