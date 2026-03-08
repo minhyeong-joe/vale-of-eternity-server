@@ -33,8 +33,11 @@ export async function googleSignIn(req, res) {
 				email,
 				password: null,
 			});
-			await user.save();
 		}
+
+		// Update lastSignIn timestamp
+		user.lastSignIn = new Date();
+		await user.save();
 
 		// Issue app JWT
 		const token = jwt.sign(
